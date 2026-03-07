@@ -228,7 +228,8 @@ HTML = """
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<link rel="icon" type="image/x-icon" href="/favicon.ico"/>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png"/>
+<link rel="shortcut icon" href="/favicon.ico"/>
 <title>Priceslides</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -629,7 +630,8 @@ ORANGE_HTML = """
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<link rel="icon" type="image/x-icon" href="/favicon.ico"/>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png"/>
+<link rel="shortcut icon" href="/favicon.ico"/>
 <title>Priceslides – Orange</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -1009,6 +1011,13 @@ def favicon():
     return send_from_directory(
         Path(__file__).parent / "static",
         "favicon.ico", mimetype="image/vnd.microsoft.icon"
+    )
+
+@app.route("/favicon.png")
+def favicon_png():
+    return send_from_directory(
+        Path(__file__).parent / "static",
+        "favicon-32.png", mimetype="image/png"
     )
 
 
