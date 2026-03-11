@@ -27,13 +27,37 @@ from google.oauth2.service_account import Credentials
 SHEET_ID       = "1kTA8Xy5vCRxMaLhlXLxrKQ_j8VYtDf_7vMGI-R-yUJs"
 GCP_KEY        = Path(__file__).parent / "gcp_key.json"
 CSV_PATH       = Path(__file__).parent / "stockcharts_SCTR.csv"
-MD_TOKEN       = "ekcwREpFQ3FXalJUWVZCX3BQMEZPeURfN2RscHA1cnliN3A4MFB3QnhXVT0"
+import os as _os
+MD_TOKEN       = _os.environ.get("MD_TOKEN", "ekcwREpFQ3FXalJUWVZCX3BQMEZPeURfN2RscHA1cnliN3A4MFB3QnhXVT0")
 N_SYMBOLS      = 100
 TRADING_DAYS   = 60
 DRY_RUN        = "--dry-run" in sys.argv
 
-# ── Load symbols ──────────────────────────────────────────────────────────────
-symbols = pd.read_csv(CSV_PATH).iloc[:N_SYMBOLS, 0].tolist()
+# ── Load symbols from Google Sheet header (source of truth) ───────────────────
+_GCP_SCOPES = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
+def _gcp_creds():
+    import json as _json
+    env_json = _os.environ.get("GCP_KEY_JSON")
+    if env_json:
+        info = _json.loads(env_json)
+        return Credentials.from_service_account_info(info, scopes=_GCP_SCOPES)
+    return Credentials.from_service_account_file(str(GCP_KEY), scopes=_GCP_SCOPES)
+
+try:
+    _gc = gspread.authorize(_gcp_creds())
+    _ws = _gc.open_by_key(SHEET_ID).sheet1
+    _header = _ws.row_values(1)
+    symbols = [h for h in _header if h and h != "Date"]
+    print(f"Symbols loaded from sheet header: {len(symbols)} symbols")
+except Exception as _e:
+    print(f"Could not read sheet header ({_e}), falling back to CSV top-{N_SYMBOLS}")
+    symbols = pd.read_csv(CSV_PATH).iloc[:N_SYMBOLS, 0].tolist()
+
 print(f"Symbols (first 5): {symbols[:5]} … ({len(symbols)} total)")
 
 # ── MarketData.app fetch ──────────────────────────────────────────────────────

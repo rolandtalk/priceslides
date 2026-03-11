@@ -1,0 +1,37 @@
+name: Daily Sheet Update
+
+on:
+  schedule:
+    # 21:15 UTC = 4:15 PM ET (adjusts automatically for EST/EDT)
+    - cron: '15 21 * * 1-5'
+  workflow_dispatch:   # allows manual trigger from GitHub UI
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install pandas requests gspread google-auth
+
+      - name: Write GCP key file
+        run: echo '${{ secrets.GCP_KEY_JSON }}' > gcp_key.json
+
+      - name: Run fetch_to_sheet.py
+        env:
+          MD_TOKEN: ${{ secrets.MD_TOKEN }}
+        run: python fetch_to_sheet.py
+
+      - name: Clean up key file
+        if: always()
+        run: rm -f gcp_key.json
