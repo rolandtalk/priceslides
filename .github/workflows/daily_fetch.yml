@@ -2,8 +2,8 @@ name: Daily Sheet Update
 
 on:
   schedule:
-    # 21:15 UTC = 4:15 PM ET (adjusts automatically for EST/EDT)
-    - cron: '15 21 * * 1-5'
+    # 22:00 UTC = 06:00 AM Taiwan time (UTC+8), safely after US market close
+    - cron: '0 22 * * 1-5'
   workflow_dispatch:   # allows manual trigger from GitHub UI
 
 jobs:
