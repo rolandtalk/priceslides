@@ -124,7 +124,8 @@ def _compute_stats(symbol: str, df: pd.DataFrame) -> dict:
             i -= 1
         if i < 0:
             return {"dg": None, "loss_pct": None, "peak_date": None,
-                    "peak_price": None, "latest_price": round(float(close.iloc[-1]), 2)}
+                    "peak_price": None, "latest_price": round(float(close.iloc[-1]), 2),
+                    "g1d": None, "g3d": None, "g5d": None, "g20d": None}
         j = i
         while j >= 0 and above[j]:
             j -= 1
@@ -135,16 +136,31 @@ def _compute_stats(symbol: str, df: pd.DataFrame) -> dict:
         latest = float(close.iloc[-1])
         dg = int(len(close) - 1 - close.index.get_loc(peak_idx))
         loss = round((latest - peak_price) / peak_price * 100, 1)
+
+        def _gain(n):
+            if len(close) < n + 1:
+                return None
+            prev = float(close.iloc[-(n + 1)])
+            if prev == 0:
+                return None
+            return round((latest - prev) / prev * 100, 2)
+
         return {
             "dg": dg,
             "loss_pct": loss,
             "peak_date": peak_idx.strftime("%Y-%m-%d"),
             "peak_price": round(peak_price, 2),
             "latest_price": round(latest, 2),
+            "g1d": _gain(1),
+            "g3d": _gain(3),
+            "g5d": _gain(5),
+            "g20d": _gain(20),
         }
     except Exception as e:
         return {"dg": None, "loss_pct": None, "peak_date": None,
-                "peak_price": None, "latest_price": None, "error": str(e)}
+                "peak_price": None, "latest_price": None,
+                "g1d": None, "g3d": None, "g5d": None, "g20d": None,
+                "error": str(e)}
 
 # Kick off prefetch on import (non-blocking)
 threading.Thread(target=_prefetch_all, daemon=True).start()
@@ -353,6 +369,10 @@ HTML = """
     <th data-col="pdate" data-type="str"  class="num">Last Peak<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
     <th data-col="pprice"data-type="num"  class="num">Peak $<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
     <th data-col="now"   data-type="num"  class="num">Now $<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
+    <th data-col="g1d"   data-type="num"  class="num">1D %<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
+    <th data-col="g3d"   data-type="num"  class="num">3D %<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
+    <th data-col="g5d"   data-type="num"  class="num">5D %<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
+    <th data-col="g20d"  data-type="num"  class="num">20D %<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
     <th style="width:2rem"></th>
   </tr></thead>
   <tbody id="tbody"></tbody>
@@ -394,6 +414,7 @@ let cachedStats = {};
 let rowData = symbols.map((sym, i) => ({
   idx: i + 1, sym,
   dg: null, loss: null, pdate: null, pprice: null, now: null,
+  g1d: null, g3d: null, g5d: null, g20d: null,
   raw: null   // full stats dict
 }));
 
@@ -419,6 +440,10 @@ function renderTable() {
       <td class="num" style="color:#8b949e;font-size:.8rem;cursor:pointer" onclick="openModal('${r.sym}')">${hasData&&d.peak_date?d.peak_date:'—'}</td>
       <td class="num" style="color:#8b949e;font-size:.8rem;cursor:pointer" onclick="openModal('${r.sym}')">${hasData&&d.peak_price?'$'+d.peak_price:'—'}</td>
       <td class="num" style="color:#8b949e;font-size:.8rem;cursor:pointer" onclick="openModal('${r.sym}')">${hasData&&d.latest_price?'$'+d.latest_price:'—'}</td>
+      <td class="num ${hasData&&d.g1d!=null?(d.g1d>=0?'loss-pos':'loss-neg'):'loading'}" onclick="openModal('${r.sym}')" style="cursor:pointer">${hasData&&d.g1d!=null?(d.g1d>0?'+':'')+d.g1d+'%':'—'}</td>
+      <td class="num ${hasData&&d.g3d!=null?(d.g3d>=0?'loss-pos':'loss-neg'):'loading'}" onclick="openModal('${r.sym}')" style="cursor:pointer">${hasData&&d.g3d!=null?(d.g3d>0?'+':'')+d.g3d+'%':'—'}</td>
+      <td class="num ${hasData&&d.g5d!=null?(d.g5d>=0?'loss-pos':'loss-neg'):'loading'}" onclick="openModal('${r.sym}')" style="cursor:pointer">${hasData&&d.g5d!=null?(d.g5d>0?'+':'')+d.g5d+'%':'—'}</td>
+      <td class="num ${hasData&&d.g20d!=null?(d.g20d>=0?'loss-pos':'loss-neg'):'loading'}" onclick="openModal('${r.sym}')" style="cursor:pointer">${hasData&&d.g20d!=null?(d.g20d>0?'+':'')+d.g20d+'%':'—'}</td>
       <td class="del-col"><button class="btn-del" onclick="doDelete('${r.sym}')" title="Delete">✕</button></td>`;
     tbody.appendChild(row);
   });
@@ -426,7 +451,8 @@ function renderTable() {
 
 // ── Sorting ───────────────────────────────────────────────────────────────────
 const COL_KEY = { idx:'idx', sym:'sym', dg:'dg', loss:'loss',
-                  pdate:'pdate', pprice:'pprice', now:'now' };
+                  pdate:'pdate', pprice:'pprice', now:'now',
+                  g1d:'g1d', g3d:'g3d', g5d:'g5d', g20d:'g20d' };
 
 function sortBy(col, type) {
   if (sortCol === col) { sortAsc = !sortAsc; }
@@ -463,6 +489,7 @@ async function loadAll() {
       const d = data[r.sym] || { error: 'no data' };
       r.raw=d; r.dg=d.dg??null; r.loss=d.loss_pct??null;
       r.pdate=d.peak_date??null; r.pprice=d.peak_price??null; r.now=d.latest_price??null;
+      r.g1d=d.g1d??null; r.g3d=d.g3d??null; r.g5d=d.g5d??null; r.g20d=d.g20d??null;
       if (d.dg != null) loaded++; else errors++;
     });
     renderTable();
@@ -491,6 +518,7 @@ async function doRefresh() {
       const d = stats[r.sym]||{}; r.raw=d;
       r.dg=d.dg??null; r.loss=d.loss_pct??null;
       r.pdate=d.peak_date??null; r.pprice=d.peak_price??null; r.now=d.latest_price??null;
+      r.g1d=d.g1d??null; r.g3d=d.g3d??null; r.g5d=d.g5d??null; r.g20d=d.g20d??null;
     });
     renderTable();
     status.textContent = `✅ Refreshed ${data.updated.length} symbols, ${data.errors.length} errors`;
@@ -539,14 +567,14 @@ async function submitAdd() {
     const data = await r.json();
     if (!data.ok) throw new Error(data.error);
     if (!rowData.find(r=>r.sym===sym)) {
-      rowData.push({idx:rowData.length+1, sym, dg:null,loss:null,pdate:null,pprice:null,now:null,raw:null});
+      rowData.push({idx:rowData.length+1, sym, dg:null,loss:null,pdate:null,pprice:null,now:null,g1d:null,g3d:null,g5d:null,g20d:null,raw:null});
     }
     // reload stats for new symbol
     const r2 = await fetch(`/api/stats/${encodeURIComponent(sym)}`);
     const d = await r2.json();
     cachedStats[sym]=d;
     const rd = rowData.find(r=>r.sym===sym);
-    if (rd) { rd.raw=d; rd.dg=d.dg??null; rd.loss=d.loss_pct??null; rd.pdate=d.peak_date??null; rd.pprice=d.peak_price??null; rd.now=d.latest_price??null; }
+    if (rd) { rd.raw=d; rd.dg=d.dg??null; rd.loss=d.loss_pct??null; rd.pdate=d.peak_date??null; rd.pprice=d.peak_price??null; rd.now=d.latest_price??null; rd.g1d=d.g1d??null; rd.g3d=d.g3d??null; rd.g5d=d.g5d??null; rd.g20d=d.g20d??null; }
     renderTable();
     msg.style.color='#3fb950'; msg.textContent=`✅ ${sym} added (${data.rows||60} rows)`;
     setTimeout(closeAdd, 1500);
@@ -733,6 +761,10 @@ ORANGE_HTML = """
     <th data-col="pdate" data-type="str" class="num">Last Peak<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
     <th data-col="pprice"data-type="num" class="num">Peak $<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
     <th data-col="now"   data-type="num" class="num">Now $<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
+    <th data-col="g1d"   data-type="num" class="num">1D %<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
+    <th data-col="g3d"   data-type="num" class="num">3D %<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
+    <th data-col="g5d"   data-type="num" class="num">5D %<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
+    <th data-col="g20d"  data-type="num" class="num">20D %<span class="sort-icon"><span class="asc">▲</span><span class="desc">▼</span></span></th>
     <th style="width:2rem"></th>
   </tr></thead>
   <tbody id="tbody"></tbody>
@@ -765,7 +797,8 @@ ORANGE_HTML = """
 const symbols = {{ symbols|tojson }};
 let cachedStats = {};
 let rowData = symbols.map((sym, i) => ({
-  idx: i+1, sym, dg:null, loss:null, pdate:null, pprice:null, now:null, raw:null
+  idx: i+1, sym, dg:null, loss:null, pdate:null, pprice:null, now:null,
+  g1d:null, g3d:null, g5d:null, g20d:null, raw:null
 }));
 let sortCol=null, sortAsc=true;
 
@@ -786,6 +819,10 @@ function renderTable() {
       <td class="num" style="color:#8b949e;font-size:.8rem;cursor:pointer" onclick="openModal('${r.sym}')">${hasData&&d.peak_date?d.peak_date:'—'}</td>
       <td class="num" style="color:#8b949e;font-size:.8rem;cursor:pointer" onclick="openModal('${r.sym}')">${hasData&&d.peak_price?'$'+d.peak_price:'—'}</td>
       <td class="num" style="color:#8b949e;font-size:.8rem;cursor:pointer" onclick="openModal('${r.sym}')">${hasData&&d.latest_price?'$'+d.latest_price:'—'}</td>
+      <td class="num ${hasData&&d.g1d!=null?(d.g1d>=0?'loss-pos':'loss-neg'):'loading'}" onclick="openModal('${r.sym}')" style="cursor:pointer">${hasData&&d.g1d!=null?(d.g1d>0?'+':'')+d.g1d+'%':'—'}</td>
+      <td class="num ${hasData&&d.g3d!=null?(d.g3d>=0?'loss-pos':'loss-neg'):'loading'}" onclick="openModal('${r.sym}')" style="cursor:pointer">${hasData&&d.g3d!=null?(d.g3d>0?'+':'')+d.g3d+'%':'—'}</td>
+      <td class="num ${hasData&&d.g5d!=null?(d.g5d>=0?'loss-pos':'loss-neg'):'loading'}" onclick="openModal('${r.sym}')" style="cursor:pointer">${hasData&&d.g5d!=null?(d.g5d>0?'+':'')+d.g5d+'%':'—'}</td>
+      <td class="num ${hasData&&d.g20d!=null?(d.g20d>=0?'loss-pos':'loss-neg'):'loading'}" onclick="openModal('${r.sym}')" style="cursor:pointer">${hasData&&d.g20d!=null?(d.g20d>0?'+':'')+d.g20d+'%':'—'}</td>
       <td class="del-col"><button class="btn-del" onclick="doDelete('${r.sym}')" title="Delete">✕</button></td>`;
     tbody.appendChild(row);
   });
@@ -821,6 +858,7 @@ async function loadAll() {
       const d = data[r.sym]||{error:'no data'};
       r.raw=d; r.dg=d.dg??null; r.loss=d.loss_pct??null;
       r.pdate=d.peak_date??null; r.pprice=d.peak_price??null; r.now=d.latest_price??null;
+      r.g1d=d.g1d??null; r.g3d=d.g3d??null; r.g5d=d.g5d??null; r.g20d=d.g20d??null;
       if (d.dg!=null) loaded++; else errors++;
     });
     renderTable();
@@ -847,6 +885,7 @@ async function doRefresh() {
       const d = stats[r.sym]||{}; r.raw=d;
       r.dg=d.dg??null; r.loss=d.loss_pct??null;
       r.pdate=d.peak_date??null; r.pprice=d.peak_price??null; r.now=d.latest_price??null;
+      r.g1d=d.g1d??null; r.g3d=d.g3d??null; r.g5d=d.g5d??null; r.g20d=d.g20d??null;
     });
     renderTable();
     status.textContent=`✅ Refreshed ${data.updated.length} symbols, ${data.errors.length} errors`;
@@ -893,13 +932,13 @@ async function submitAdd() {
     const data = await r.json();
     if (!data.ok) throw new Error(data.error);
     if (!rowData.find(r=>r.sym===sym)) {
-      rowData.push({idx:rowData.length+1, sym, dg:null,loss:null,pdate:null,pprice:null,now:null,raw:null});
+      rowData.push({idx:rowData.length+1, sym, dg:null,loss:null,pdate:null,pprice:null,now:null,g1d:null,g3d:null,g5d:null,g20d:null,raw:null});
     }
     const r2 = await fetch(`/api/stats/${encodeURIComponent(sym)}`);
     const d = await r2.json();
     cachedStats[sym]=d;
     const rd = rowData.find(r=>r.sym===sym);
-    if (rd) { rd.raw=d; rd.dg=d.dg??null; rd.loss=d.loss_pct??null; rd.pdate=d.peak_date??null; rd.pprice=d.peak_price??null; rd.now=d.latest_price??null; }
+    if (rd) { rd.raw=d; rd.dg=d.dg??null; rd.loss=d.loss_pct??null; rd.pdate=d.peak_date??null; rd.pprice=d.peak_price??null; rd.now=d.latest_price??null; rd.g1d=d.g1d??null; rd.g3d=d.g3d??null; rd.g5d=d.g5d??null; rd.g20d=d.g20d??null; }
     renderTable();
     msg.style.color='#3fb950'; msg.textContent=`✅ ${sym} added & marked orange`;
     setTimeout(closeAdd, 1500);
