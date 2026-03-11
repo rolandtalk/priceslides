@@ -1151,51 +1151,60 @@ def _sheet_color_orange(ws, symbol: str):
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
     """Refresh last-day close for every cached symbol. 1 credit each."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     updated, errors = [], []
-    ws = _sheet_ws()
-    header = ws.row_values(1)
-    col_a  = ws.col_values(1)          # dates in col A
-    date_strs = col_a[1:]              # skip header
 
-    with _cache_lock:
-        syms = list(_ohlcv_cache.keys())
+    try:
+        ws = _sheet_ws()
+        header = ws.row_values(1)
+        col_a  = ws.col_values(1)
+        date_strs = col_a[1:]
 
-    for sym in syms:
-        try:
-            date, close = _md_fetch_latest(sym)
-            date_str = date.strftime("%Y-%m-%d")
+        with _cache_lock:
+            syms = list(_ohlcv_cache.keys())
 
-            # update in-memory cache
-            with _cache_lock:
-                df = _ohlcv_cache.get(sym)
-                if df is not None:
-                    if date not in df.index:
-                        # append new row
-                        new_row = pd.DataFrame({"Close": [close]}, index=[date])
-                        new_row.index.name = "Date"
-                        df = pd.concat([df, new_row]).tail(60)
+        def _refresh_one(sym):
+            try:
+                date, close = _md_fetch_latest(sym)
+                date_str = date.strftime("%Y-%m-%d")
+
+                with _cache_lock:
+                    df = _ohlcv_cache.get(sym)
+                    if df is not None:
+                        if date not in df.index:
+                            new_row = pd.DataFrame({"Close": [close]}, index=[date])
+                            new_row.index.name = "Date"
+                            df = pd.concat([df, new_row]).tail(60)
+                        else:
+                            df.at[date, "Close"] = close
+                        _ohlcv_cache[sym] = df
+                        _stats_cache[sym] = _compute_stats(sym, df)
+
+                if sym in header:
+                    col_idx = header.index(sym) + 1
+                    if date_str in date_strs:
+                        row_idx = date_strs.index(date_str) + 2
+                        ws.update_cell(row_idx, col_idx, round(close, 2))
                     else:
-                        df.at[date, "Close"] = close
-                    _ohlcv_cache[sym] = df
-                    _stats_cache[sym] = _compute_stats(sym, df)
+                        new_row_idx = len(date_strs) + 2
+                        ws.update_cell(new_row_idx, 1, date_str)
+                        ws.update_cell(new_row_idx, col_idx, round(close, 2))
 
-            # update sheet
-            if sym in header:
-                col_idx = header.index(sym) + 1
-                import gspread.utils as gu
-                col_letter = gu.rowcol_to_a1(1, col_idx)[:-1]
-                if date_str in date_strs:
-                    row_idx = date_strs.index(date_str) + 2
-                    ws.update_cell(row_idx, col_idx, round(close, 2))
+                return ("ok", sym)
+            except Exception as e:
+                return ("err", sym, str(e))
+
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            futures = {ex.submit(_refresh_one, sym): sym for sym in syms}
+            for fut in as_completed(futures):
+                result = fut.result()
+                if result[0] == "ok":
+                    updated.append(result[1])
                 else:
-                    # new trading day — append row in col A and this col
-                    new_row_idx = len(date_strs) + 2
-                    ws.update_cell(new_row_idx, 1, date_str)
-                    ws.update_cell(new_row_idx, col_idx, round(close, 2))
+                    errors.append({"sym": result[1], "error": result[2]})
 
-            updated.append(sym)
-        except Exception as e:
-            errors.append({"sym": sym, "error": str(e)})
+    except Exception as e:
+        return jsonify({"updated": updated, "errors": errors, "fatal": str(e)})
 
     return jsonify({"updated": updated, "errors": errors})
 
